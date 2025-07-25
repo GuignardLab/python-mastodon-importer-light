@@ -1,29 +1,48 @@
+from __future__ import annotations
+
 import io
 import re
 import os
 import numpy
-import pandas
 import struct
 import zipfile
 import warnings
 import xml.etree.ElementTree as ET
-
-from .utils import ismember, RGBint2RGB
+from typing import Any
 
 SUPPORTED_MASTODON_VERSIONS = ["0.3"]
+
+
+def RGBint2RGB(rgb_int: int) -> tuple[int, int, int]:
+    """Convert integer color to RGB
+
+    Args:
+        rgb_int: int
+            color value stored as int
+
+    Returns:
+    tuple of 3 integers values
+        the RGB value in uint8
+    """ """"""
+    B = rgb_int & 255
+    G = (rgb_int >> 8) & 255
+    R = (rgb_int >> 16) & 255
+    return (R, G, B)
 
 
 class JavaRawReader:
     MAGIC = -21267
     VERSION = 5
 
-    def __init__(self, raw_file):
+    def __init__(self, raw_file: io.IOBase | str):
         if isinstance(raw_file, io.IOBase):
             self._fh = raw_file
         elif isinstance(raw_file, str):
             self._fh = open(raw_file, "rb")
         else:
-            raise RuntimeError("raw_file needs to be instance of str or IOBase")
+            raise RuntimeError(
+                "raw_file needs to be instance of str or IOBase"
+            )
 
         self.block = b""
         self.index = 0
@@ -31,13 +50,16 @@ class JavaRawReader:
         if not struct.unpack(">h", self._fh.read(2))[0] == JavaRawReader.MAGIC:
             raise RuntimeError("Wrong format")
 
-        if not struct.unpack(">h", self._fh.read(2))[0] == JavaRawReader.VERSION:
+        if (
+            not struct.unpack(">h", self._fh.read(2))[0]
+            == JavaRawReader.VERSION
+        ):
             raise RuntimeError("Wrong version")
 
-    def __enter__(self):
+    def __enter__(self) -> JavaRawReader:
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, *args):
         self.close()
 
     def close(self):
@@ -46,7 +68,7 @@ class JavaRawReader:
     def __del__(self):
         self.close()
 
-    def read(self, size, fmt):
+    def read(self, size: int, fmt: str) -> tuple:
         if size > len(self.block) - self.index:
             self._fetch_block()
 
@@ -55,40 +77,46 @@ class JavaRawReader:
 
         return res
 
-    def read_int(self):
+    def read_int(self) -> int:
         return self.read(4, ">i")[0]
 
-    def read_short(self):
+    def read_short(self) -> int:
         return self.read(2, ">h")[0]
 
-    def read_utf8(self):
+    def read_utf8(self) -> str:
         str_length = self.read_short()
-        return b"".join(self.read(str_length, ">" + "c" * str_length)).decode("utf-8")
+        return b"".join(self.read(str_length, ">" + "c" * str_length)).decode(
+            "utf-8"
+        )
 
-    def read_double_rev(self):
+    def read_double_rev(self) -> float:
         return self.read(8, ">d")[0]
 
-    def read_enum(self):
+    def read_enum(self) -> tuple:
         enum_struct = self.read_file_enum_header()
         enum = self.read_file_string()
         enum_class = enum_struct["class_desc"]["class_name"]
         return enum, enum_class
 
-    def read_file_enum_header(self):
+    def read_file_enum_header(self) -> dict:
         enum_struct = {}
         enum_struct["tc_enum"] = struct.unpack(">b", self._fh.read(1))[0]
         if enum_struct["tc_enum"] != 126:
-            raise RuntimeError("Could not find the key for enum in binary file.")
+            raise RuntimeError(
+                "Could not find the key for enum in binary file."
+            )
         enum_struct["class_desc"] = self.read_file_class_desc()
         enum_struct["enum_class_desc"] = self.read_file_class_desc()
         self.read_file_byte()
         return enum_struct
 
-    def read_file_class_desc(self):
+    def read_file_class_desc(self) -> dict:
         class_desc = {}
         class_desc["class_desc"] = struct.unpack(">b", self._fh.read(1))[0]
         if class_desc["class_desc"] != 114:
-            raise RuntimeError("Could not find the key for enum in binary file.")
+            raise RuntimeError(
+                "Could not find the key for enum in binary file."
+            )
         class_desc["class_name"] = self.read_file_utf8()
         class_desc["serial_version_UID"] = self.read_file_long()
         class_desc["n_handle_bytes"] = self.read_file_byte()
@@ -96,29 +124,29 @@ class JavaRawReader:
         class_desc["end_block"] = self.read_file_byte()
         return class_desc
 
-    def read_file_utf8(self):
+    def read_file_utf8(self) -> str:
         str_length = struct.unpack(">h", self._fh.read(2))[0]
         string = self._fh.read(str_length).decode("utf-8")
         return string
 
-    def read_file_short(self):
+    def read_file_short(self) -> int:
         val = struct.unpack(">h", self._fh.read(2))[0]
         return val
 
-    def read_file_long(self):
+    def read_file_long(self) -> int:
         val = struct.unpack(">q", self._fh.read(8))[0]
         return val
 
-    def read_file_byte(self):
+    def read_file_byte(self) -> bool:
         val = struct.unpack(">b", self._fh.read(1))[0]
         return val
 
-    def read_file_string(self):
+    def read_file_string(self) -> str:
         self.read_file_byte()
         string = self.read_file_utf8()
         return string
 
-    def import_double_map(self):
+    def import_double_map(self) -> numpy.array[int]:
         n_entries = self.read_int()
         map_ = numpy.zeros((n_entries, 2))
         for proj in range(n_entries):
@@ -126,7 +154,7 @@ class JavaRawReader:
             map_[proj, 1] = self.read_double_rev()
         return map_
 
-    def import_int_map(self):
+    def import_int_map(self) -> numpy.array[int]:
         n_entries = self.read_int()
         map_ = numpy.zeros((n_entries, 2), dtype=int)
         for proj in range(n_entries):
@@ -134,7 +162,7 @@ class JavaRawReader:
             map_[proj, 1] = self.read_int()
         return map_
 
-    def import_feature_scalar_double(self):
+    def import_feature_scalar_double(self) -> dict:
         projections = []
         projection = dict()
 
@@ -142,7 +170,10 @@ class JavaRawReader:
         projection["info"] = self.read_utf8()
         projection["dimension"] = self.read_enum()
         projection["units"] = self.read_utf8()
-        if isinstance(projection["units"], str) and len(projection["units"]) == 0:
+        if (
+            isinstance(projection["units"], str)
+            and len(projection["units"]) == 0
+        ):
             projection["units"] = ""
         projection["map"] = self.import_double_map()
         projections.append(projection)
@@ -162,19 +193,32 @@ class JavaRawReader:
         self.index = 0
 
 
-class MastodonReader:
-    def __init__(self, source_file):
-        assert os.path.exists(source_file), f"File '{source_file}' does not exist."
+class MicroMastodonReader:
+    def __init__(self, source_file: str):
+        assert os.path.exists(
+            source_file
+        ), f"File '{source_file}' does not exist."
         self.source_file = source_file
 
-    def read_metadata(self):
-        """Retrieve the metadata, made mainly of the physical units, and the absolute path to the XML/H5 BDV file"""
+    def read_metadata(self) -> dict[str, Any]:
+        """Retrieve the metadata, made mainly of the physical units, and the absolute path to the XML/H5 BDV file
+
+        Returns
+        -------
+        dictionary
+            A dictionary with the following keys:
+                "version"
+                "spim_data_file_path"
+                "spim_data_file_path_type"
+                "space unit"
+                "time unit"
+        """
         with zipfile.ZipFile(self.source_file) as masto_zip:
             with masto_zip.open("project.xml", "r") as proj_xml:
                 xml_root = ET.fromstring(proj_xml.read())
 
         mastodon_version = xml_root.attrib["version"]
-        if not mastodon_version in SUPPORTED_MASTODON_VERSIONS:
+        if mastodon_version not in SUPPORTED_MASTODON_VERSIONS:
             warnings.warn(
                 f"Warning: Version mismatch with found version '{mastodon_version}'. Supported are {' '.join(SUPPORTED_MASTODON_VERSIONS)}.",
                 RuntimeWarning,
@@ -194,84 +238,66 @@ class MastodonReader:
             "time unit": time_units,
         }
 
-    def read_tags(self, V, E):
+    def read_tags(
+        self,
+    ) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
+        """Reads the tags of the Mastodon file
+
+        Returns
+        -------
+        tss: dictionary mapping a string to a dictionary
+            a dictionary mapping the name of the tag
+            to the tag dictionary (with keys "label" and "tags")
+
+        dictionary mapping a string to a dictionary
+            a dictionary mapping the name of the tag
+            to the dictionary mapping node id to its tag
+
+        dictionary mapping a string to a dictionary
+            a dictionary mapping the name of the tag
+            to the dictionary mapping edge id to its tag
+        """
         with zipfile.ZipFile(self.source_file) as masto_zip:
             fh = masto_zip.open("tags.raw", "r")
             with JavaRawReader(fh) as jr:
 
                 tss = self._read_tag_set_structure(jr)
 
-                label_sets_vertices, map_vertices = self._read_label_set_property_map(
-                    jr
-                )
-                label_sets_edges, map_edges = self._read_label_set_property_map(jr)
+                map_vertices = self._read_label_set_property_map(jr)
+                map_edges = self._read_label_set_property_map(jr)
 
-                self._append_tags_to_table(map_vertices, label_sets_vertices, tss, V)
-                self._append_tags_to_table(map_edges, label_sets_edges, tss, E)
+                dict_vertices = self._build_tag_dict(map_vertices, tss)
+                dict_edges = self._build_tag_dict(map_edges, tss)
 
-                return tss
+                tss = {
+                    ts["name"]: {"label": ts["label"], "tags": ts["tags"]}
+                    for ts in tss
+                }
 
-    def _append_tags_to_table(self, map_, label_sets, tss, tab):
-        # Prepare columns.
-        n_tag_set = len(tss)
-        columns = {}
-        for i in range(n_tag_set):
-            columns[i] = numpy.zeros(len(tab), dtype="int32")
-            columns[i].fill(-1)
+                return tss, dict_vertices, dict_edges
 
-        # Map tag ids to tag_set.
-        n_total_tags = 0
-        for ts in tss:
-            n_total_tags = n_total_tags + len(ts["tags"])
+    @staticmethod
+    def _build_tag_dict(map_, tss):
+        out_dicts = {tags["name"]: {} for tags in tss}
+        tag_id_to_name_label = {}
+        for tags in tss:
+            name = tags["name"]
+            for tag in tags["tags"]:
+                tag_id_to_name_label[tag["id"]] = (name, tag["label"])
 
-        tag_map = {}
-        tag_set_map = {}
+        for id_, tags in map_.items():
+            for tag in tags:
+                name, label = tag_id_to_name_label[tag]
+                out_dicts[name][id_] = label
 
-        for i in range(len(tss)):
-            for j in range(len(tss[i]["tags"])):
-                tag_map[tss[i]["tags"][j]["id"]] = tss[i]["tags"][j]["label"]
-                tag_set_map[tss[i]["tags"][j]["id"]] = i  ###
+        return out_dicts
 
-        n_label_sets = len(label_sets)
-
-        #  Process label-set by label-set.
-        for i in range(n_label_sets):
-
-            label_set = label_sets[i]
-            n_labels = len(label_set)
-
-            for j in range(n_labels):
-                # What is the tag-id of this element in the label set?
-                tag_id = label_set[j]
-
-                # What tag-set column are we editing for this tag_id?
-                tag_set = tag_set_map[tag_id]
-
-                # % What rows, in the map, have this label-set?
-                idx2 = numpy.nonzero(map_[:, 1] == i)[0]  # orig: ( i - 1  ) ); % 1 -> 0
-
-                #  What object ids correspond to these rows?
-                object_ids = map_[idx2, 0]
-
-                # % What are the rows, in the table, that have these ids?
-                _, idx1 = ismember(object_ids, tab.index.to_numpy())
-
-                # % Fill these rows with the tag_id
-                columns[tag_set][idx1] = tag_id
-
-        for i, ts in enumerate(tss):
-            tab[ts["name"] + "_ID"] = columns[i]
-            tab[ts["name"] + "_NAME"] = tab[ts["name"] + "_ID"].apply(
-                lambda xxx: tag_map[xxx] if xxx > -1 else ""
-            )
-
-        return tss
-
-    def _read_label_set_property_map(self, jr):
+    @staticmethod
+    def _read_label_set_property_map(jr):
         num_sets = jr.read_int()
         label_sets = []
 
-        for i in range(num_sets):
+        for _ in range(num_sets):
             num_labels = jr.read_int()
             labels = numpy.zeros(num_labels, dtype="int32")
 
@@ -281,17 +307,21 @@ class MastodonReader:
 
             label_sets.append(labels)
 
+        label_sets = numpy.array(label_sets, dtype=object)
+
         # Read entries.
         size = jr.read_int()
-        map_ = numpy.zeros((size, 2), dtype="int32")
+        map_ = {}
 
         for i in range(size):
-            map_[i, 0] = jr.read_int()
-            map_[i, 1] = jr.read_int()
+            cell_id = jr.read_int()
+            labels = jr.read_int()
+            map_[cell_id] = label_sets[labels]
 
-        return label_sets, map_
+        return map_
 
-    def _read_tag_set_structure(self, jr):
+    @staticmethod
+    def _read_tag_set_structure(jr):
         n_tag_sets = jr.read_int()
 
         tag_sets = []
@@ -322,7 +352,15 @@ class MastodonReader:
 
         return tag_sets
 
-    def read_features(self, V, E):
+    def read_features(self) -> dict[str, dict[str, Any]]:
+        """Reads Mastodon features
+
+        Returns
+        -------
+        dictionary mapping a string to a dictionary
+            the dictionary maps a feature name to
+            the representative dictionary of that feature
+        """
         with zipfile.ZipFile(self.source_file) as masto_zip:
             feature_files = filter(
                 lambda fn: fn.startswith("features/") and fn.endswith(".raw"),
@@ -340,46 +378,44 @@ class MastodonReader:
 
             mff = MastodonFeatureFactory()
 
+            features_out = {}
             for feature_name, feature_fn in features.items():
-                masto_feature_class = mff(feature_name)
-                if masto_feature_class:
-                    masto_feature = masto_feature_class(feature_fn)
-                    masto_feature.read(V, E)
+                try:
+                    masto_feature_class = mff(feature_name)
+                    if masto_feature_class:
+                        masto_feature = masto_feature_class(feature_fn)
+                        feature = masto_feature.read()
+                        for f in feature:
+                            features_out[f["key"]] = {
+                                k: v for k, v in f.items() if k != "key"
+                            }
 
-    def create_nx_graph(self, V, E):
-        import networkx as nx
+                except struct.error as e:
+                    warnings.warn(
+                        f"{feature_name} could not be properly read:\n{e}"
+                    )
+            return features_out
 
-        G = nx.from_pandas_edgelist(
-            E, source="source_idx", target="target_idx", create_using=nx.DiGraph
-        )
-        nx.set_node_attributes(G, V.to_dict("index"))
+    def read_tables(self) -> tuple[numpy.ndarray, numpy.ndarray]:
+        """Reads and returns the list of vertices and edges
 
-        return G
-
-    def read(self, features=True, tags=True):
-        """Reads Mastodon source file
-
-        Args:
-            features (bool, optional): read pre-computed features?. Defaults to True.
-            tags (bool, optional): read tags?. Defaults to True.
-
-        Returns:
-            [tuple]: G (nx graph), V (node table), E (edge table), tss (tag structure)
+        Returns
+        -------
+        V : np.ndarray m by 11
+            an array of the `m` vertices where
+            V[0] is a vertex
+            V[0, :3] is the spatial position of vertex 0
+            V[0, 3] is the temporal position of vertex 0
+            V[0, 3:10] are the values of the elongation matrix
+                       representing the elipsoid of vertex 0
+            V[0, 10] is the `bsrs` (??) of vertex 0
+        E : np.ndarray k by 3
+            an array representing the `k` edges
+            E[0] is an edge
+            E[0, 2] is the id of the edge
+            E[0, 0] is the id of the vertex at time `t`
+            E[0, 1] is the id of the vertex at time `t + dt`
         """
-        V, E = self.read_tables()
-
-        tss = None
-        if tags:
-            tss = self.read_tags(V, E)
-
-        if features:
-            self.read_features(V, E)
-
-        G = self.create_nx_graph(V, E)
-
-        return G, V, E, tss
-
-    def read_tables(self):
         with zipfile.ZipFile(self.source_file) as masto_zip:
             fh = masto_zip.open("model.raw", "r")
 
@@ -392,35 +428,45 @@ class MastodonReader:
                     V[i, 3] = jr.read(4, "<i")[0]
                     V[i, 4:11] = jr.read(8 * 7, "<ddddddd")
 
-                V = pandas.DataFrame(
-                    V,
-                    columns=[
-                        "x",
-                        "y",
-                        "z",
-                        "t",
-                        "c_11",
-                        "c_12",
-                        "c_13",
-                        "c_22",
-                        "c_23",
-                        "c_33",
-                        "bsrs",
-                    ],
-                )
-
                 n_edges = jr.read_int()
-                E = numpy.zeros((n_edges, 3), dtype=numpy.int32)
+                E = numpy.zeros((n_edges, 2), dtype=numpy.int32)
 
                 for i in range(n_edges):
-                    E[i, :2] = jr.read(4 * 4, ">iiii")[:2]
-                    E[i, 2] = i
+                    E[i] = jr.read(4 * 4, ">iiii")[:2]
 
                 E = E[numpy.argsort(E[:, 0]), :]
 
-                E = pandas.DataFrame(E, columns=["source_idx", "target_idx", "id"])
-
                 return V, E
+
+    def read(self, features: bool = True, tags: bool = True) -> tuple:
+        """Reads Mastodon source file
+
+        Parameters:
+        ----------
+        features : bool, default=True
+            read pre-computed features
+        tags : bool, default=True
+            read tags
+
+        Returns:
+        --------
+        V : vertex array (see `read_tables`)
+        E : edge array (see `read_tables`)
+        tag_info : info about tags (see `read_tags`, only if `tags==True`)
+        vertices_tags : vertices tags (see `read_tags`, only if `tags==True`)
+        edges_tags : edges tags (see `read_tags`, only if `tags==True`)
+        features_dictionary : features information
+            (see `read_features`, only if `features==True`)
+        """
+        to_return = [self.read_tables()]
+
+        if tags:
+            to_return.append(self.read_tags())
+
+        if features:
+            to_return.append(self.read_features())
+
+        return tuple(to_return)
 
 
 class MastodonFeatureFactory:
@@ -460,7 +506,8 @@ class MastodonFeatureFactory:
 
         else:
             warnings.warn(
-                f"Warning: Unkown Mastodon feature: {name}, skipping", RuntimeWarning
+                f"Warning: Unkown Mastodon feature: {name}, skipping",
+                RuntimeWarning,
             )
 
 
@@ -474,35 +521,8 @@ class MastodonFeature:
     def __init__(self, mastodon_feature_file):
         self.mastodon_feature_file = mastodon_feature_file
 
-    def read(self, V, E):
+    def read(self):
         pass
-
-    def add_projections_to_table(self, projections, V, E):
-        """Adds features to Spot or Link table
-
-        Args:
-            projections (list[dict]): the projections containing the feature information and values
-            V (df): Spot table
-            E (df): Link table
-        """
-        if self.add_to == "Link":
-            tab = E
-            tab_index = tab.id.to_numpy()
-        elif self.add_to == "Spot":
-            tab = V
-            tab_index = tab.index.to_numpy()
-        else:
-            warnings.warn(
-                f"Mastodon Feature '{self.name}': cannot add features to '{add_to}' table (should be 'Spot' or 'Link'",
-                RuntimeWarning,
-            )
-            return
-
-        for projection in projections:
-            tab[projection["key"]] = -1
-
-            _, idx = ismember(projection["map"][:, 0].astype("int32"), tab_index)
-            tab.loc[idx, projection["key"]] = projection["map"][:, 1]
 
 
 class LinkVelocity(MastodonFeature):
@@ -514,7 +534,7 @@ class LinkVelocity(MastodonFeature):
         "distance per frame."
     )
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             projection = dict()
@@ -526,7 +546,7 @@ class LinkVelocity(MastodonFeature):
 
             projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class LinkDisplacement(MastodonFeature):
@@ -534,7 +554,7 @@ class LinkDisplacement(MastodonFeature):
     add_to = "Link"
     info = "Computes the link displacement in physical units as the distance between the source spot and the target spot."
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             projection = dict()
@@ -546,7 +566,7 @@ class LinkDisplacement(MastodonFeature):
 
             projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotIntensity(MastodonFeature):
@@ -557,21 +577,23 @@ class SpotIntensity(MastodonFeature):
         "All the pixels within the spot ellipsoid are taken into account",
     ]
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             n_sources = jr.read_int()
             for ch in range(1, (n_sources + 1)):
                 for kw in ["Mean", "Std", "Min", "Max", "Median", "Sum"]:
                     projection = dict()
-                    projection["key"] = "Spot intensity {} ch{:2d}".format(kw, ch)
+                    projection["key"] = "Spot intensity {} ch{:2d}".format(
+                        kw, ch
+                    )
                     projection["info"] = self.info
                     projection["dimension"] = "INTENSITY"
                     projection["units"] = "Counts"
                     projection["map"] = jr.import_double_map()
                     projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotCenterIntensity(MastodonFeature):
@@ -583,7 +605,7 @@ class SpotCenterIntensity(MastodonFeature):
         "and have a sigma value equal to the minimal radius of the ellipsoid divided by 2."
     )
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             n_sources = jr.read_int()
@@ -598,7 +620,7 @@ class SpotCenterIntensity(MastodonFeature):
 
                 projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotQuickMean(MastodonFeature):
@@ -609,7 +631,7 @@ class SpotQuickMean(MastodonFeature):
         'It is recommended to use the "Spot intensity" feature when the best accuracy is required.'
     )
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             n_sources = jr.read_int()
@@ -624,7 +646,7 @@ class SpotQuickMean(MastodonFeature):
 
                 projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotGaussianFilteredIntensity(MastodonFeature):
@@ -637,7 +659,7 @@ class SpotGaussianFilteredIntensity(MastodonFeature):
         "to the minimal radius of the ellipsoid divided by 2."
     )
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             n_sources = jr.read_int()
@@ -645,7 +667,9 @@ class SpotGaussianFilteredIntensity(MastodonFeature):
                 # Mean.
                 projection = dict()
 
-                projection["key"] = f"Spot gaussian filtered intensity Mean ch{ch}"
+                projection["key"] = (
+                    f"Spot gaussian filtered intensity Mean ch{ch}"
+                )
                 projection["info"] = self.info
                 projection["dimension"] = "INTENSITY"
                 projection["units"] = "Counts"
@@ -656,7 +680,9 @@ class SpotGaussianFilteredIntensity(MastodonFeature):
                 # Std.
                 projection = dict()
 
-                projection["key"] = f"Spot gaussian filtered intensity Std ch{ch}"
+                projection["key"] = (
+                    f"Spot gaussian filtered intensity Std ch{ch}"
+                )
                 projection["info"] = self.info
                 projection["dimension"] = "INTENSITY"
                 projection["units"] = "Counts"
@@ -664,7 +690,7 @@ class SpotGaussianFilteredIntensity(MastodonFeature):
 
                 projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotMedianIntensity(MastodonFeature):
@@ -675,7 +701,7 @@ class SpotMedianIntensity(MastodonFeature):
         "the largest box that fits into the spot ellipsoid."
     )
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             n_sources = jr.read_int()
@@ -690,7 +716,7 @@ class SpotMedianIntensity(MastodonFeature):
 
                 projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotNLinks(MastodonFeature):
@@ -698,7 +724,7 @@ class SpotNLinks(MastodonFeature):
     add_to = "Spot"
     info = "Computes the number of links that touch a spot."
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             # 0.
@@ -712,7 +738,7 @@ class SpotNLinks(MastodonFeature):
 
             projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotSumIntensity(MastodonFeature):
@@ -720,7 +746,7 @@ class SpotSumIntensity(MastodonFeature):
     add_to = "Spot"
     info = "Computes the total intensity inside a spot, for the pixels inside the spot ellipsoid."
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             n_sources = jr.read_int()
@@ -735,7 +761,7 @@ class SpotSumIntensity(MastodonFeature):
 
                 projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotTrackID(MastodonFeature):
@@ -743,7 +769,7 @@ class SpotTrackID(MastodonFeature):
     add_to = "Spot"
     info = "Returns the ID of the track each spot belongs to."
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             projection = dict()
@@ -756,7 +782,7 @@ class SpotTrackID(MastodonFeature):
 
             projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class TrackNSpots(MastodonFeature):
@@ -764,7 +790,7 @@ class TrackNSpots(MastodonFeature):
     add_to = "Spot"
     info = "Returns the number of spots in a track."
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             projection = dict()
@@ -777,7 +803,7 @@ class TrackNSpots(MastodonFeature):
 
             projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class DetectionQuality(MastodonFeature):
@@ -785,12 +811,12 @@ class DetectionQuality(MastodonFeature):
     add_to = "Spot"
     info = ""
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             projections = jr.import_feature_scalar_double()
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class LinkCost(MastodonFeature):
@@ -798,12 +824,12 @@ class LinkCost(MastodonFeature):
     add_to = "Link"
     info = ""
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             projections = jr.import_feature_scalar_double()
 
-        self.add_projections_to_table(projections, V, E)
+        return projections
 
 
 class SpotRadius(MastodonFeature):
@@ -811,7 +837,7 @@ class SpotRadius(MastodonFeature):
     add_to = "Spot"
     info = "Computes the spot equivalent radius. This is the radius of the sphere that would have the same volume that of the spot."
 
-    def read(self, V, E):
+    def read(self):
         projections = []
         with JavaRawReader(self.mastodon_feature_file) as jr:
             projection = dict()
@@ -824,8 +850,4 @@ class SpotRadius(MastodonFeature):
 
             projections.append(projection)
 
-        self.add_projections_to_table(projections, V, E)
-
-
-if __name__ == "__main__":
-    pass
+        return projections
