@@ -15,7 +15,7 @@ maintainers = [
 ]
 name = "Micro-Mastodon-Reader"
 description = "Light Mastodon project file reader for Python"
-version = "0.0.1"
+version = "1.0.0"
 license = "BSD-3-Clause"
 license-files = [ "LICENSE" ]
 readme = {file = "README.md", content-type = "text/markdown"}
@@ -51,7 +51,7 @@ profile = "black"
 line_length = 79
 
 [tool.bumpver]
-current_version = "0.0.1"
+current_version = "1.0.0"
 version_pattern = "MAJOR.MINOR.PATCH[-TAG]"
 commit_message = "bump version {old_version} -> {new_version}"
 commit = true
