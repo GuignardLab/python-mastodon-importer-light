@@ -4,9 +4,9 @@ This is a lighter version of [Mastodon Reader for Python](https://github.com/mas
 
 Import the *spots and links tables*, *features*, *tags* and meta data from a *Mastodon project file*.
 
-ported to Python from: [matlab-mastodon-importer](https://github.com/mastodon-sc/matlab-mastodon-importer)
+Ported to Python from: [matlab-mastodon-importer](https://github.com/mastodon-sc/matlab-mastodon-importer)
 
-It is lighter mainly because they do not depend on `pandas` nor on `networkx` and it therefore only depends on `numpy`.
+This reader is lighter mainly because it does not depend on `pandas` nor on `networkx` and it therefore only depends on `numpy`.
 
 ## Example
 
@@ -64,12 +64,6 @@ mr.read_features()
 
 ### pip
 
-`pip install micromastodonreader`
+`pip install micro-mastodon-reader`
 
-more information [on PyPi](https://pypi.org/project/mircomastodonreader/)
-
-### Dependencies
-
-* numpy
-* pandas
-* networkx
+more information [on PyPi](https://pypi.org/project/micro-mastodon-reader/)
